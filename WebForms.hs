@@ -132,7 +132,7 @@ inputTag t name value = "<input " ++ t' ++ "name=" ++ name ++ val ++ ">"
                 _  -> "type=" ++ t ++ " "
                         
 formTags :: String -> String
-formTags s = "<form method=post>" ++ s ++ "</form>"
+formTags s = "<form method=post>" ++ s -- ++ "</form>"
 
 htmlTags :: String -> String
 htmlTags s = "<html><body>" ++ s ++ "</body></html>"

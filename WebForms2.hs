@@ -14,10 +14,10 @@ type Question = [QuestionType]
 type Answer = [Text]
 
 example :: Web Text
-example = do ans <- R.ask [QRadio "Help" ["Kill", "Save"]]
---             ans <- R.ask $ [QText "What panties are you wearing?", QText "What kind of bra?"]
-             return $ pack ("<html><body>" ++ (unpack (Prelude.head ans)) ++ ", eh? Niiiiice...</html></body>")
-           
+example = do ans1 <- R.ask [QRadio "Are you a boy or a girl?" ["Boy", "Girl"]]
+             ans2 <- R.ask [QText "What panties are you wearing?"]
+             return $ pack ("<html><body>A " ++ (unpack (Prelude.head ans1)) ++ " with " ++ (unpack (Prelude.head ans2)) ++ ", eh? Niiiiice...</html></body>")
+ 
 
 main :: IO ()
 main = scotty 3000 $ do
@@ -35,7 +35,8 @@ runWeb r = do
             ans <- getAnswer
             res <- liftIO $ R.run r (tr ans t)
             case res of
-                (Left (q, t')) -> html $ embedTrace t' (page q) 0
+                (Left (q, t')) -> do liftIO $ putStrLn $ unpack $ embedTrace t' (page q) 0
+                                     html $ embedTrace t' (page q) 0
                 (Right text)   -> html text
     where tr ans t = case ans of
                       []  -> t
