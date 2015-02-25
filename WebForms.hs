@@ -9,22 +9,80 @@ type Web a = R.Replay Question Answer a
 
 type Question = [QuestionType]
 
-data QuestionType = QText String | QRadio String [String]
+data QuestionType = QText String | QRadio String [String] | QDrop String [String]
     deriving (Show, Read)
 
 type Answer = [Text]
 
 example :: Web Text
 example = do ans1 <- R.ask [QRadio "Are you a boy or a girl?" ["Boy", "Girl"]]
-             ans2 <- R.ask [QText "What panties are you wearing?"]
+             ans2 <- R.ask [QDrop "What panties are you wearing?" ["Shimapan", "Shiro", "Speedos"]]
              return $ pack ("<html><body>A " ++ (unpack (Prelude.head ans1)) ++ " with " ++ (unpack (Prelude.head ans2)) ++ ", eh? Niiiiice...</html></body>")
+             
+calculatorExample :: Web Text
+calculatorExample = do ans1 <- R.ask [QDrop "Operation" ["*", "+", "-"], 
+                                      QText "Term1:", QText "Term2:"]
+                       case (parse (term1 ans1), parse (term2 ans1)) of
+                            ([], _)  -> calcExampleWrongInput 
+                            (_, [])  -> calcExampleWrongInput
+                            (p1, p2) -> let (i, _)  = Prelude.head p1
+                                            (i', _) = Prelude.head p2
+                                        in calcExampleResult (parseCalc (unpack (Prelude.head ans1)) i i')
+  where term1 ans  = unpack (Prelude.head $ Prelude.tail ans)
+        term2 ans  = unpack $ Prelude.head $ Prelude.tail $ Prelude.tail ans
+        parse :: String -> [(Int, String)]
+        parse ans  = (reads ans) :: [(Int, String)]
+      --  parse2 ans = Prelude.head $ (reads (term2 ans)) :: [(Int, String)]
+
+                            
+calcExampleWrongInput :: Web Text
+calcExampleWrongInput = do ans1 <- R.ask [QDrop "Operation" ["*", "+", "-"], 
+                                          QText "Please only input integer values:", QText "Please only input integer values:"]
+                           case (parse (term1 ans1), parse (term2 ans1)) of
+                            ([], _)  -> calcExampleWrongInput 
+                            (_, [])  -> calcExampleWrongInput
+                            (p1, p2) -> let (i, _)  = Prelude.head p1
+                                            (i', _) = Prelude.head p2
+                                        in calcExampleResult (parseCalc (unpack (Prelude.head ans1)) i i')
+  where term1 ans  = unpack (Prelude.head $ Prelude.tail ans)
+        term2 ans  = unpack $ Prelude.head $ Prelude.tail $ Prelude.tail ans
+        parse ans  = ((reads ans) :: [(Int, String)])
+     --   parse2 ans = Prelude.head $ (reads (term2 ans)) :: [(Int, String)]
+
+calcExampleResult :: (String, String) -> Web Text
+calcExampleResult (c, r) = do ans <- R.ask [QRadio (c ++ " = " ++ r ++ ". Remember result?") ["Yes", "No"]]
+                              case (unpack (Prelude.head ans)) of
+                                "Yes" -> calcExampleCarry (read r)
+                                "No"  -> calculatorExample
+
+calcExampleCarry :: Int -> Web Text
+calcExampleCarry x = do ans1 <- R.ask [QDrop "Operation" ["*", "+", "-"], 
+                                      QText "Term1:"]
+                        case parse (term1 ans1) of
+                            [] -> calcExampleWrongInput 
+                            p  -> let (i, _) = Prelude.head p
+                                  in calcExampleResult (parseCalc (unpack (Prelude.head ans1)) x i)
+  where term1 ans  = unpack (Prelude.head $ Prelude.tail ans)
+       -- parse :: String -> (Int, String)
+        parse ans  = ((reads ans) :: [(Int, String)])
+      --  parse2 ans = Prelude.head $ (reads (term2 ans)) :: [(Int, String)]
+
+
+parseCalc :: String -> Int -> Int -> (String, String)
+parseCalc "+" x y = ((show x) ++ " + " ++ (show y), (show (x + y)))
+parseCalc "*" x y = ((show x) ++ " * " ++ (show y), (show (x * y)))
+parseCalc "-" x y = ((show x) ++ " - " ++ (show y), (show (x - y)))                              
+
+
  
 
 main :: IO ()
 main = scotty 3000 $ do
        get "/" (runWeb example)
        post "/" (runWeb example)    
-    
+  
+-- | The main run function of the module. Given a Web Text describing a form, 
+--   it will execute a local website based on that program.   
 runForm :: Web Text -> IO ()
 runForm r = scotty 3000 $ do
             get "/" (runWeb r)
@@ -97,15 +155,16 @@ page qs = --pack $ "<html><body>" ++ "<form method=post>" ++
 
 questionToText :: Question -> Int -> Text
 questionToText [] x = pack $ inputTag "hidden" "questionSize" (show x) 
-                      -- "<input type=hidden name=questionSize value=" ++ (show x) ++ ">"
 questionToText ((QText q):qs) x = pack $ q ++ "<br>" ++ (inputTag "" tagName "") ++ "<br>" ++ unpack (questionToText qs (x+1))
-                                 -- "<p><input name=answer" ++ (show (x+1)) ++ "></p>" ++ unpack (questionToText qs (x+1)))
   where tagName = "answer" ++ (show (x+1))
 questionToText ((QRadio s rs):qs) x = pack $ s ++ "<br>" ++ radioButtons (x+1) rs ++ unpack (questionToText qs (x+1))
   where radioButtons :: Int -> [String] -> String
         radioButtons _ [] = ""
         radioButtons x (r:rs) = (inputTag "radio" ("answer" ++ (show x)) r) ++ r ++ "<br>" ++ radioButtons x rs
-        --"<input type=radio name=answer" ++ (show x) ++ " value=" ++ r ++ ">" ++ r ++ "<br>" ++ radioButtons x rs
+questionToText ((QDrop s rs):qs) x = pack $ s ++ "<br>" ++ (selectTag ("answer" ++ (show (x+1))) $ optionTags rs) ++ (unpack (questionToText qs (x+1)))
+  where selectTag n s = "<select name=" ++ n ++">" ++ s ++ "</select><br>"
+        optionTags [] = ""
+        optionTags (r:rs) = "<option value=" ++ r ++ ">" ++ r ++ "</option>" ++ optionTags rs
         
                          
 embedTrace :: R.Trace Answer -> Int -> String
@@ -123,13 +182,16 @@ embedTrace ((R.Answer t):ts) x = --(inputTag "hidden" tagName (show answerSize))
         tagName = "hidden" ++ (show (x+1))
 
 inputTag :: String -> String -> String -> String
-inputTag t name value = "<input " ++ t' ++ "name=" ++ name ++ val ++ ">"
+inputTag t name value = "<input " ++ t' ++ name' ++ val ++ ">"
   where val = case value of
                       "" -> ""
                       _  -> " value=" ++ value
         t'  = case t of
                 "" -> ""
                 _  -> "type=" ++ t ++ " "
+        name' = case name of
+                   "" -> ""
+                   _  -> "name=" ++ name ++ " " 
                         
 formTags :: String -> String
 formTags s = "<form method=post>" ++ s -- ++ "</form>"
