@@ -128,8 +128,6 @@ forever p = cycle p
 (<|>) :: Program -> Program -> Program
 (<|>) p q = [Parallel p q]
 
---p <|> q <|> r = [Parallel p q] <|> r = Parallel [Parallel p q] r
--- [Parallel a b] <|> [c] = [Parallel (Parallel a b) c]
 
 ----------------------------------------------
 -- run-functions and their helper functions --
@@ -148,30 +146,10 @@ onTick w [] _ = return ()
 onTick w p t = case life t' of
                 False -> return ()
                 True  -> do t'' <- runAction (head p) t' w
+                            printAction (head p)
+                            putStrLn "\n"
                             onTick w (tail p) t''
   where t' = deathAndTaxes t
-
--- 'onTick' runs one action at a time if the Turtle is alive
--- If the next action is a parallel execution, 'runParallel' will handle it
-{-
-onTick :: Window -> Program -> Turtle -> IO ()
-onTick _w [] _t    = return ()
-onTick w (p:ps) t  =
-  case life t' of
-    False -> return ()
-    True  ->
-      case p of
-        (Parallel p1 q) ->
-          runParallel w [(p1, t'), (q, t')]
-        _ ->
-          do
-            (p', t2) <- runAction p t' w 
-            putStr "Turtle performed "
-            printAction p
-            putStr "\n"
-            onTick w (p' ++ ps) t2
-  where t' = deathAndTaxes t
--}
 
 -- 'deathAndTaxes' counts down a Turtle's 'deathclock'
 -- and kills it when its time has come
@@ -182,97 +160,6 @@ deathAndTaxes t =
             0  -> t {deathclock = -1, life = False}
             n  -> t {deathclock = n-1}
     else t
-
--- 'runParallel' executes multiple Programs in parallel
--- with the help of runParallelAction
-{-
-runParallel :: Window -> [(Program, Turtle)] -> IO ()
-runParallel w [] = return () 
-runParallel w pt = do
-  putStrLn "Following actions performed in parallel: "
-  pt' <- mapM (runParallelAction w) pt
-  runParallel w (concat pt')
-                    
--- 'runParallelAction' executes multiple 'Program's in parallel
--- by one Action per 'Program' each
-runParallelAction :: Window -> (Program, Turtle) -> IO [(Program, Turtle)] 
-runParallelAction _w ([], t)                        = return []
-runParallelAction w (((Parallel p q):ps), t) = return [(ps, t), (p, t), (q, t)]
-runParallelAction w (p, t)                   =
-  case life t of
-    False -> return []
-    True ->
-      do
-        (p', t'') <- runAction (head p) t' w
-        putStr "  "
-        printAction (head p)
-        putStr "\n"
-        return $ [((p' ++ tail p), t'')]
-        where
-          t' = deathAndTaxes t
--}
--- A turtle with standard values
-turtleInit :: Turtle
-turtleInit =
-  Ttl { location = (150,150), orientation = 270, life = True
-      , toggleDraw = True, penColor = Black, deathclock = -1}
-
-{-
--- 'interpretProgram' takes a program and pattern matches for the actions
--- 'Limited', 'Forever', 'Sequential', and 'Times'. If any of these cases
--- are found the function converts them to programs without these constructors
-interpretProgram :: Program -> Program
-interpretProgram []                    = []
-interpretProgram ((Limited n p):ps)    =
-  (take n (interpretProgram p)) ++ interpretProgram ps
-interpretProgram ((Forever p):ps)      =
-  cycle $ interpretProgram p
-interpretProgram ((Sequential a b):ps) =
-  interpretProgram [a] ++ interpretProgram [b] ++ interpretProgram ps
-interpretProgram ((Times n p):ps)      =
-  (concat (take n (cycle [interpretProgram p]))) ++ interpretProgram ps
-interpretProgram (p:ps)                =
-  [p] ++ interpretProgram ps
-
--}
-
--- 'runAction' executes the Action given to the turtle in a given window
-{-
-runAction :: Program -> Turtle -> Window -> IO Turtle --(Program, Turtle)
-runAction (Forward n)    t w = do
-    case toggleDraw t of
-        True -> do 
-                  getWindowTick w
-                  drawInWindow w graphic
-                  return ([], t {location = (x2, y2)})
-        False -> return ([], t {location = (x2, y2)})        
-        where
-              a         = n * cos (((orientation t)/180) * pi)
-              o         = n * sin (((orientation t)/180) * pi)
-              (x1, y1)  = location t
-              x2        = round $ (fromIntegral x1) + a
-              y2        = round $ (fromIntegral y1) + o
-              graphic   = withColor (penColor t) $ line (x1, y1) (x2, y2)
-runAction (TRight d)     t w   = return $ 
-                                ([], t {orientation = mod' ((orientation t) + d) 360}) 
-runAction (Backward n)   t w   = runAction (Forward (-n)) t w
-runAction (TLeft d)      t w   = runAction (TRight (-d)) t w
-runAction (PenUp)        t w   = return $ ([], t {toggleDraw = False})
-runAction (PenDown)      t w   = return $ ([], t {toggleDraw = True})
-runAction (Color c)      t w   = return $ ([], t {penColor = c})
-runAction (Die)          t w   = return $ ([], t {life = False})
-runAction (Idle)         t w   = return ([], t)
-runAction (Forever p)    t w   =
-runAction (Sequential a b) t w =
-runAction (Limited n p)  t w =
-{-runAction (Lifespan n p) t w =
-  if ((n >= deathclock t) && (deathclock t /= -1))
-  then return (p, t)
-  else return (p, t {deathclock = n})-}
-runAction (Lifespan n p) t w =
-runAction (Parallel a b) t w =
---runAction p                         t w = return (interpretProgram [p], t)
--}
 
 runAction :: Action -> Turtle -> Window -> IO Turtle --(Program, Turtle)
 runAction (Forward n)    t w = do
@@ -304,22 +191,11 @@ runAction (StartDeathClock n) t w =
 runAction (Parallel p q) t w = do runParallel w [(p, t), (q, t)]
                                   return t
                                        
-{-runAction ((Forever p):ps)    t w   = 
-runAction ((Sequential a b):ps) t w = do t' <- runAction a t w
-                                    runAction b t' w
-runAction ((Limited n p):ps)  t w   = 
-{-runAction (Lifespan n p) t w =
-  if ((n >= deathclock t) && (deathclock t /= -1))
-  then return (p, t)
-  else return (p, t {deathclock = n})-}
-runAction (Lifespan n p) t w =
-runAction (Parallel a b) t w =
--}
 
 runParallel :: Window -> [(Program, Turtle)] -> IO ()
 runParallel w [] = return () 
-runParallel w pt = do
-  --putStrLn "Following actions performed in parallel: "
+runParallel w pt@(p, t) | length pt == 1 = onTick w p t  do
+  putStrLn "Following actions performed in parallel: "
   pt' <- mapM (runParallelAction w) pt
   runParallel w (concat pt')
                     
@@ -334,10 +210,10 @@ runParallelAction w (p, t)                   =
     True ->
       do
         t'' <- runAction (head p) t' w
-    --    putStr "  "
-    --    printAction (head p)
-    --    putStr "\n"
-        return $ [(((tail p) ++ tail p), t'')]
+        putStr "  "
+        printAction (head p)
+        putStr "\n"
+        return $ [((tail p), t'')]
         where
           t' = deathAndTaxes t
           
@@ -347,34 +223,13 @@ printAction (Forward n)      = putStr $ "forward " ++ show n
 printAction (TRight n)       = putStr $ "right " ++ show n
 printAction (TLeft n)        = putStr $ "left " ++ show n
 printAction (Backward n)     = putStr $ "backward " ++ show n
-{-printAction (Limited n p)    = do putStr $ "Limited " ++ show n ++ " ["
-                                  printAction (head p)
-                                  putStr " .. ]" 
-printAction (Lifespan n p)   = do putStr $ "Lifespan " ++ show n ++ " [" 
-                                  printAction $ head p
-                                  putStr " .. ]"-}
 printAction (PenUp)          = putStr "penUp"
 printAction (PenDown)        = putStr "penDown"
 printAction (Die)            = putStr "Turtle soup"
 printAction (Idle)           = putStr "Idle"
 printAction (Color c)        = putStr $ "color " ++ show c
-{-printAction (Times n p)      = do putStr $ "times " ++ show n ++ " ["
-                                  printAction $ head p
-                                  putStr " .. ]"
-printAction (Forever p)      = do putStr "forever [" 
-                                  printAction (head p)
-                                  putStr " .. ]"
-printAction (Sequential a b) = do printAction a
-                                  putStr " >*> "
-                                  printAction b
-printAction (Parallel p q)   = do putStr "[ "
-                                  printAction (head p)
-                                  putStr " .. ]"
-                                  putStr " <|> "
-                                  putStr "[ "
-                                  printAction (head q)
-                                  putStr " .. ]"
--}
+printAction (Parallel _ _)   = putStr $ "Starting parallel composition"
+
 
 
 
