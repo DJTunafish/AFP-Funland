@@ -145,9 +145,9 @@ onTick :: Window -> Program -> Turtle -> IO ()
 onTick w [] _ = return ()
 onTick w p t = case life t' of
                 False -> return ()
-                True  -> do t'' <- runAction (head p) t' w
-                            printAction (head p)
-                            putStrLn "\n"
+                True  -> do printAction (head p)
+                            putStr "\n"
+                            t'' <- runAction (head p) t' w
                             onTick w (tail p) t''
   where t' = deathAndTaxes t
 
@@ -193,11 +193,16 @@ runAction (Parallel p q) t w = do runParallel w [(p, t), (q, t)]
                                        
 
 runParallel :: Window -> [(Program, Turtle)] -> IO ()
-runParallel w [] = return () 
-runParallel w pt@(p, t) | length pt == 1 = onTick w p t  do
+runParallel w [] = do putStrLn "Ending parallel composition"
+                      return () 
+runParallel w pt
+ | length pt == 1 = do putStrLn "Ending parallel composition"
+                       onTick w p t 
+ | otherwise =  do
   putStrLn "Following actions performed in parallel: "
   pt' <- mapM (runParallelAction w) pt
   runParallel w (concat pt')
+ where (p, t) = head pt         
                     
 -- 'runParallelAction' executes multiple 'Program's in parallel
 -- by one Action per 'Program' each
@@ -209,11 +214,13 @@ runParallelAction w (p, t)                   =
     False -> return []
     True ->
       do
-        t'' <- runAction (head p) t' w
         putStr "  "
         printAction (head p)
         putStr "\n"
-        return $ [((tail p), t'')]
+        t'' <- runAction (head p) t' w
+        case tail p of
+            []  -> return []
+            p'  -> return [(p'), t''] 
         where
           t' = deathAndTaxes t
           
@@ -230,6 +237,9 @@ printAction (Idle)           = putStr "Idle"
 printAction (Color c)        = putStr $ "color " ++ show c
 printAction (Parallel _ _)   = putStr $ "Starting parallel composition"
 
-
+turtleInit :: Turtle
+turtleInit = Ttl {orientation = 0, location = (150, 150),
+                  toggleDraw = True, life = True, deathClock = 0,
+                  penColor = Black}
 
 
