@@ -15,20 +15,17 @@ module Turtle (
   , penUp, penDown
   , color
   , die, idle
-  , lifespan
-  , times, forever
-  , (>*>), (<|>)
 
   -- * Derived operations
   , backward, left
 
+  -- * Composition operations
+  , limited, lifespan
+  , times, forever
+  , (>*>), (<|>)
+
   -- * Run functions
   , runProgram
-
-  -- * Programs
- {- , spiral, spiralInfinite
-  , square, star
-  , parallelHeart-}
 
   ) where
 
@@ -55,12 +52,6 @@ data Action where
   Idle       :: Action
   StartDeathClock :: Int -> Action
   Parallel   :: Program -> Program -> Action
- {- Limited    :: Int     -> Program -> Program
-  Lifespan   :: Int     -> Program -> Program
-  Times      :: Int     -> Program -> Program
-  Forever    :: Program -> Program
-  Sequential :: Program  -> Program  -> Program
-  Parallel   :: Program -> Program -> Program-}
   deriving Show --for testing purposes
 
 -- The 'Turtle' data type consists of six attributes
@@ -104,8 +95,15 @@ color c = [Color c]
 die = [Die]
 -- | Returns an action that does nothing
 idle = [Idle]
+
+
+---------------------------
+-- Composition functions --
+---------------------------
+
 -- | Executes a given number of instructions from the given
 --  program
+limited :: Int -> Program -> Program
 limited n p = take n p
 -- | Executes a given number of instructions from the given
 --   program, besfore executing the "die" action
@@ -130,8 +128,9 @@ forever p = cycle p
 
 
 ----------------------------------------------
--- run-functions and their helper functions --
+-- Run-functions and their helper functions --
 ----------------------------------------------
+
 -- |'runProgram' takes a 'Program' and creates a
 -- Turtle that executes the Actions in a Window
 runProgram :: Program -> IO ()
@@ -141,14 +140,18 @@ runProgram p = runGraphics $ do
    onTick w p turtleInit
    return ()
 
+-- 'onTick' checks if the inputted Turtle is still alive.
+-- If so, it will execute one instruction from the given program.
+-- If not, it will halt.
 onTick :: Window -> Program -> Turtle -> IO ()
 onTick w [] _ = return ()
 onTick w p t = case life t' of
                 False -> return ()
-                True  -> do printAction (head p)
-                            putStr "\n"
-                            t'' <- runAction (head p) t' w
-                            onTick w (tail p) t''
+                True  -> do
+                  printAction (head p)
+                  putStr "\n"
+                  t'' <- runAction (head p) t' w
+                  onTick w (tail p) t''
   where t' = deathAndTaxes t
 
 -- 'deathAndTaxes' counts down a Turtle's 'deathclock'
@@ -161,7 +164,9 @@ deathAndTaxes t =
             n  -> t {deathclock = n-1}
     else t
 
-runAction :: Action -> Turtle -> Window -> IO Turtle --(Program, Turtle)
+-- 'runAction' takes an 'Action' and a 'Turtle' and executes the Action
+-- on the given 'Window', changing the state of the Turtle
+runAction :: Action -> Turtle -> Window -> IO Turtle
 runAction (Forward n)    t w = do
     case toggleDraw t of
         True -> do 
@@ -176,14 +181,15 @@ runAction (Forward n)    t w = do
               x2        = round $ (fromIntegral x1) + a
               y2        = round $ (fromIntegral y1) + o
               graphic   = withColor (penColor t) $ line (x1, y1) (x2, y2)
-runAction (TRight d)     t w   = return (t {orientation = mod' ((orientation t) + d) 360})  
-runAction (Backward n)   t w   = runAction (Forward (-n)) t w
-runAction (TLeft d)      t w   = runAction (TRight (-d)) t w
-runAction (PenUp)        t w   = return (t {toggleDraw = False})
-runAction (PenDown)      t w   = return (t {toggleDraw = True}) 
-runAction (Color c)      t w   = return (t {penColor = c})
-runAction (Die)          t w   = return (t {life = False})
-runAction (Idle)         t w   = return t
+runAction (TRight d)     t w  =
+  return (t {orientation = mod' ((orientation t) + d) 360})  
+runAction (Backward n)   t w  = runAction (Forward (-n)) t w
+runAction (TLeft d)      t w  = runAction (TRight (-d)) t w
+runAction (PenUp)        t w  = return (t {toggleDraw = False})
+runAction (PenDown)      t w  = return (t {toggleDraw = True}) 
+runAction (Color c)      t w  = return (t {penColor = c})
+runAction (Die)          t w  = return (t {life = False})
+runAction (Idle)         t w  = return t
 runAction (StartDeathClock n) t w = 
   if ((n >= deathclock t) && (deathclock t /= -1))
   then return t
@@ -191,24 +197,29 @@ runAction (StartDeathClock n) t w =
 runAction (Parallel p q) t w = do runParallel w [(p, t), (q, t)]
                                   return t
                                        
-
+-- 'runParallel' checks the size of the inputted list of (Program, Turtle)
+-- and passes it on to the appropriate function
 runParallel :: Window -> [(Program, Turtle)] -> IO ()
-runParallel w [] = do putStrLn "Ending parallel composition"
-                      return () 
-runParallel w pt
- | length pt == 1 = do putStrLn "Ending parallel composition"
-                       onTick w p t 
- | otherwise =  do
+runParallel w []      = do
+  putStrLn "Ending parallel composition"
+  return () 
+runParallel w [(p,t)] = do
+  putStrLn "Ending parallel composition"
+  onTick w p t
+runParallel w pt      = do
   putStrLn "Following actions performed in parallel: "
-  pt' <- mapM (runParallelAction w) pt
+  pt' <- mapM (runParallelAction w) (concat $ map addClones pt)
   runParallel w (concat pt')
- where (p, t) = head pt         
-                    
+
+addClones :: (Program, Turtle) -> [(Program, Turtle)]
+addClones (((Parallel p q):ps), t) = [(p, t), (q, t)]
+addClones x                        = x
+
 -- 'runParallelAction' executes multiple 'Program's in parallel
 -- by one Action per 'Program' each
-runParallelAction :: Window -> (Program, Turtle) -> IO [(Program, Turtle)] 
+runParallelAction :: Window -> (Program, Turtle) -> IO [(Program, Turtle)] --Perhaps change this type
 runParallelAction _w ([], t)                        = return []
-runParallelAction w (((Parallel p q):ps), t) = return [(ps, t), (p, t), (q, t)]
+--runParallelAction w (((Parallel p q):ps), t) = return [(ps, t), (p, t), (q, t)] --One round "consumed" here.Deal with this in runParallel?
 runParallelAction w (p, t)                   =
   case life t of
     False -> return []
@@ -219,27 +230,27 @@ runParallelAction w (p, t)                   =
         putStr "\n"
         t'' <- runAction (head p) t' w
         case tail p of
-            []  -> return []
-            p'  -> return [(p'), t''] 
+          [] -> return []
+          p' -> return [(p', t'')]
         where
           t' = deathAndTaxes t
           
-      
+-- 'printAction' prints the given 'Action'
 printAction :: Action -> IO ()
-printAction (Forward n)      = putStr $ "forward " ++ show n
-printAction (TRight n)       = putStr $ "right " ++ show n
-printAction (TLeft n)        = putStr $ "left " ++ show n
-printAction (Backward n)     = putStr $ "backward " ++ show n
-printAction (PenUp)          = putStr "penUp"
-printAction (PenDown)        = putStr "penDown"
-printAction (Die)            = putStr "Turtle soup"
-printAction (Idle)           = putStr "Idle"
-printAction (Color c)        = putStr $ "color " ++ show c
-printAction (Parallel _ _)   = putStr $ "Starting parallel composition"
+printAction (Forward n)         = putStr $ "forward " ++ show n
+printAction (TRight n)          = putStr $ "right " ++ show n
+printAction (TLeft n)           = putStr $ "left " ++ show n
+printAction (Backward n)        = putStr $ "backward " ++ show n
+printAction (PenUp)             = putStr "penUp"
+printAction (PenDown)           = putStr "penDown"
+printAction (Die)               = putStr "Turtle soup"
+printAction (Idle)              = putStr "Idle"
+printAction (Color c)           = putStr $ "color " ++ show c
+printAction (Parallel _ _)      = putStr $ "Starting parallel composition"
+printAction (StartDeathClock n) = putStr $ "Turtle has " ++ (show n) ++ " actions to live"
 
+-- A turtle with initial values
 turtleInit :: Turtle
-turtleInit = Ttl {orientation = 0, location = (150, 150),
-                  toggleDraw = True, life = True, deathClock = 0,
-                  penColor = Black}
-
-
+turtleInit =
+  Ttl { location = (150,150), orientation = 270, life = True
+      , toggleDraw = True, penColor = Black, deathclock = -1}
