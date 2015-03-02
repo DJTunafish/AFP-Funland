@@ -25,7 +25,7 @@ module Turtle (
   , (>*>), (<|>)
 
   -- * Run functions
-  , runProgram
+  , runProgram, runTextual
 
   ) where
 
@@ -138,7 +138,6 @@ runProgram p = runGraphics $ do
    w <- openWindowEx "Turtle!" Nothing (300, 300) DoubleBuffered (Just 1000)
    drawInWindow w (polygon [(0,0),(0,300),(300,300),(300,0)]) 
    onTick w p turtleInit
-   return ()
 
 -- 'onTick' checks if the inputted Turtle is still alive.
 -- If so, it will execute one instruction from the given program.
@@ -148,11 +147,25 @@ onTick w [] _ = return ()
 onTick w p t = case life t' of
                 False -> return ()
                 True  -> do
-                  printAction (head p)
-                  putStr "\n"
+                  -- printAction (head p) t'
+                  -- putStr "\n"
                   t'' <- runAction (head p) t' w
                   onTick w (tail p) t''
   where t' = deathAndTaxes t
+
+runTextual :: Program -> IO ()
+runTextual p = onTickText p turtleInit
+
+onTickText :: Program -> Turtle -> IO ()
+onTickText [] _ = return ()
+onTickText p t = case life t' of
+  False -> return ()
+  True  -> do
+    t'' <- printAction (head p) t'
+    putStr "\n"
+    onTickText (tail p) t''
+  where t' = deathAndTaxes t
+
 
 -- 'deathAndTaxes' counts down a Turtle's 'deathclock'
 -- and kills it when its time has come
@@ -164,23 +177,38 @@ deathAndTaxes t =
             n  -> t {deathclock = n-1}
     else t
 
+calculateForward :: Double -> Turtle -> Turtle
+calculateForward n t =
+  t {location = (x2, y2)}
+  where
+    a = n * cos (((orientation t)/180) * pi)
+    o = n * sin (((orientation t)/180) * pi)
+    (x1, y1) = location t
+    x2 = round $ (fromIntegral x1) + a
+    y2 = round $ (fromIntegral y1) + o
+
+
 -- 'runAction' takes an 'Action' and a 'Turtle' and executes the Action
 -- on the given 'Window', changing the state of the Turtle
 runAction :: Action -> Turtle -> Window -> IO Turtle
-runAction (Forward n)    t w = do
-    case toggleDraw t of
-        True -> do 
-                  getWindowTick w
-                  drawInWindow w graphic
-                  return (t {location = (x2, y2)})
-        False -> return (t {location = (x2, y2)})         
-        where
-              a         = n * cos (((orientation t)/180) * pi)
-              o         = n * sin (((orientation t)/180) * pi)
-              (x1, y1)  = location t
-              x2        = round $ (fromIntegral x1) + a
-              y2        = round $ (fromIntegral y1) + o
-              graphic   = withColor (penColor t) $ line (x1, y1) (x2, y2)
+runAction (Forward n)    t w =
+  case toggleDraw t of
+    True  -> do 
+      getWindowTick w
+      drawInWindow w graphic
+      return t'
+--          return (t {location = (x2, y2)})
+    False -> return t'
+    where
+              -- a         = n * cos (((orientation t)/180) * pi)
+              -- o         = n * sin (((orientation t)/180) * pi)
+              -- (x1, y1)  = location t
+              -- x2        = round $ (fromIntegral x1) + a
+              -- y2        = round $ (fromIntegral y1) + o
+      graphic   = withColor (penColor t) $ line (x1, y1) (x2, y2)
+      (x1, y1) = location t
+      (x2, y2) = location t'
+      t' = calculateForward n t
 runAction (TRight d)     t w  =
   return (t {orientation = mod' ((orientation t) + d) 360})  
 runAction (Backward n)   t w  = runAction (Forward (-n)) t w
@@ -200,14 +228,14 @@ runAction (Parallel p q) t w = do runParallel w [(p, t), (q, t)]
 -- 'runParallel' checks the size of the inputted list of (Program, Turtle)
 -- and passes it on to the appropriate function
 runParallel :: Window -> [(Program, Turtle)] -> IO ()
-runParallel w []      = do
-  putStrLn "Ending parallel composition"
+runParallel w []      = -- do
+--  putStrLn "Ending parallel composition"
   return () 
-runParallel w [(p,t)] = do
-  putStrLn "Ending parallel composition"
+runParallel w [(p,t)] = -- do
+--  putStrLn "Ending parallel composition"
   onTick w p t
 runParallel w pt      = do
-  putStrLn "Following actions performed in parallel: "
+  -- putStrLn "Following actions performed in parallel: "
   pt' <- mapM (runParallelAction w) (concat $ map addClones pt)
   runParallel w (concat pt')
 
@@ -225,9 +253,9 @@ runParallelAction w (p, t)                   =
     False -> return []
     True ->
       do
-        putStr "  "
-        printAction (head p)
-        putStr "\n"
+        -- putStr "  "
+        -- printAction (head p) t
+        -- putStr "\n"
         t'' <- runAction (head p) t' w
         case tail p of
           [] -> return []
@@ -236,18 +264,88 @@ runParallelAction w (p, t)                   =
           t' = deathAndTaxes t
           
 -- 'printAction' prints the given 'Action'
-printAction :: Action -> IO ()
-printAction (Forward n)         = putStr $ "forward " ++ show n
-printAction (TRight n)          = putStr $ "right " ++ show n
-printAction (TLeft n)           = putStr $ "left " ++ show n
-printAction (Backward n)        = putStr $ "backward " ++ show n
-printAction (PenUp)             = putStr "penUp"
-printAction (PenDown)           = putStr "penDown"
-printAction (Die)               = putStr "Turtle soup"
-printAction (Idle)              = putStr "Idle"
-printAction (Color c)           = putStr $ "color " ++ show c
-printAction (Parallel _ _)      = putStr $ "Starting parallel composition"
-printAction (StartDeathClock n) = putStr $ "Turtle has " ++ (show n) ++ " actions to live"
+printAction :: Action -> Turtle -> IO Turtle
+printAction (Forward n)         t = do
+  putStr $ "Forward " ++ (show n) ++ " - From "
+    ++ (show (location t)) ++ " to "
+    ++ (show (location t'))
+  return t'
+  where t' = calculateForward n t
+printAction (TRight d)          t = do
+  putStr $ "Right " ++ (show d)
+    ++ " - Orientation from " ++ (show (orientation t))
+    ++ " to " ++ (show (orientation t'))
+  return t'
+  where t' = t {orientation = mod' ((orientation t) + d) 360}
+printAction (TLeft d)           t = do
+  putStr $ "Left " ++ show d
+    ++ " - Orientation from " ++ (show (orientation t))
+    ++ " to " ++ (show (orientation t'))
+  return t'
+  where t' = t {orientation = mod' ((orientation t) + d) 360}
+printAction (Backward n)        t = do
+  putStr $ "Backward " ++ show n ++ " - From "
+    ++ (show (location t)) ++ " to "
+    ++ (show (location t'))
+  return t'
+  where t' = calculateForward n t
+printAction (PenUp)             t = do
+  putStr "PenUp"
+  return $ t {toggleDraw = False}
+printAction (PenDown)           t = do
+  putStr "PenDown"
+  return $ t {toggleDraw = True}
+printAction (Die)               t = do
+  putStr "Turtle soup"
+  return $ t {life = False}
+printAction (Idle)              t = do
+  putStr "Idle"
+  return t
+printAction (Color c)           t = do
+  putStr $ "Color " ++ show c
+  return $ t {penColor = c}
+printAction (StartDeathClock n) t =
+  if ((n >= deathclock t) && (deathclock t /= -1))
+  then do
+    putStr $ "Turtle has " ++ (show (deathclock t))
+      ++ " actions to live" 
+    return t
+  else do
+    putStr $ "Turtle has " ++ (show n) ++ " actions to live"
+    return (t {deathclock = n})
+printAction (Parallel p q)      t = do
+  putStrLn $ "Starting parallel composition"
+  runParallelText [(p, t), (q, t)]
+  return t
+  
+
+runParallelText :: [(Program, Turtle)] -> IO ()
+runParallelText []      = do
+  putStrLn "Ending parallel composition"
+  return ()
+runParallelText [(p,t)] = do
+  putStrLn "Ending parallel composition"
+  onTickText p t
+runParallelText pt = do
+  putStrLn "Following actions performed in parallel"
+  pt' <- mapM runParallelTextAction (concat $ map addClones pt)
+  runParallelText $ concat pt'
+
+runParallelTextAction :: (Program, Turtle) -> IO [(Program, Turtle)]
+runParallelTextAction ([], _) = return []
+runParallelTextAction (p, t) =
+  case life t of
+    False -> return []
+    True  -> do
+      putStr "  "
+      t'' <- printAction (head p) t'
+      putStr "\n"
+      -- t'' <- printAction (head p) t'
+      case tail p of
+        [] -> return []
+        p' -> return [(p', t'')]
+      where
+        t' = deathAndTaxes t
 
 -- A turtle with initial values
 turtleInit :: Turtle
