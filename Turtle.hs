@@ -213,7 +213,7 @@ runParallel w pt      = do
 
 addClones :: (Program, Turtle) -> [(Program, Turtle)]
 addClones (((Parallel p q):ps), t) = [(p, t), (q, t)]
-addClones x                        = x
+addClones x                        = [x]
 
 -- 'runParallelAction' executes multiple 'Program's in parallel
 -- by one Action per 'Program' each
