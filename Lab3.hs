@@ -1,3 +1,5 @@
+{-# Language TemplateHaskell #-}
+
 import System.Environment (getArgs)
 import Control.Distributed.Process
 import Control.Distributed.Process.Node
