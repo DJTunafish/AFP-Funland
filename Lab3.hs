@@ -95,11 +95,11 @@ main = do
   
   putStrLn $ show args
   case args of
-    ["server", host, port] -> do 
-      backend <- initializeBackend host port initRemoteTable
+    ["server", port] -> do 
+      backend <- initializeBackend "127.0.0.1" port initRemoteTable
       startMaster backend (master backend)
-    ["client", host, port] -> do
-      backend <- initializeBackend host port rtable
+    ["client", port] -> do
+      backend <- initializeBackend "127.0.0.1" port rtable
       node <- newLocalNode backend
       runProcess node (clientIgnition backend)
     _        -> putStrLn "Illegal command" 
